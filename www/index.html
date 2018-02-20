@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Miler Lite</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+  </head>
+  <body>
+    <div id="control" class="container mb-1">
+      <div class="row">
+        <div id="title" class="col">
+          <span style="line-height: 1.62; font-size: 1.5rem;">
+            <img src="beer.png" class="img-fluid" style="width: 1.62rem; height: 1.62rem; vertical-align: text-bottom;" alt="🍺">
+            Miler Lite
+          </span>
+        </div>
+        <div id="auth" class="col">
+          <span class="float-right">
+            <button id="authorize-button" type="button" class="btn btn-success" style="display: none;">Authorize</button>
+            <button id="signout-button" type="button" class="btn btn-outline-danger" style="display: none;">Sign Out</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div id="message-wrapper" class="container">
+      <div id="message" class="alert alert-success" role="alert"></div>
+    </div>
+
+    <div id="form-wrapper" class="container">
+      <form id="mileage-form" name="mileage-form" action="#" onsubmit="submitMileage(); return false;" style="display: none;">
+        <div class="form-group">
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Presets</label>
+            </div>
+
+            <template id="template-preset" style="display: none;">
+              <button id="preset-{{INDEX}}" type="button" class="btn btn-block {{BUTTON_CLASS}}" onclick="loadPreset({{INDEX}});">{{PURPOSE}}</button>
+            </template>
+
+            <div id="presets">
+            </div>
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Date</label>
+            </div>
+            <input type="date" class="form-control form-control-lg" id="date" name="date" value="" placeholder="mm/dd/yyyy" onkeypress="return dontSubmit(event)" />
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Business</label>
+            </div>
+
+            <template id="template-business-choice" style="display: none;">
+              <label class="btn btn-outline-secondary btn-lg {{BUTTON_ACTIVE}}">
+                <input type="radio" id="business-{{INDEX}}" name="business" value="{{VALUE}}" />
+                {{LABEL}}
+              </label>
+            </template>
+
+            <div id="business-choices" class="btn-group btn-group-toggle" data-toggle="buttons">
+            </div>
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Purpose</label>
+            </div>
+            <input type="text" class="form-control form-control-lg" id="purpose" name="purpose" value="" placeholder="..." onkeypress="return dontSubmit(event)" />
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Destination</label>
+            </div>
+            <input type="text" class="form-control form-control-lg" id="destination" name="destination" value="" placeholder="..." onkeypress="return dontSubmit(event)" />
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Start</label>
+            </div>
+            <input type="number" class="form-control form-control-lg" id="start" name="start" value="" placeholder="0" onkeyup="startChanged()" onclick="startChanged()" onchange="startChanged()" onkeypress="return dontSubmit(event)" />
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">End</label>
+            </div>
+            <input type="number" class="form-control form-control-lg" id="end" name="end" value="" placeholder="0" onkeyup="endChanged()" onclick="endChanged()" onchange="endChanged()" onkeypress="return dontSubmit(event)" />
+          </fieldset>
+
+          <fieldset class="form-group">
+            <div>
+              <label class="font-weight-bold">Mileage</label>
+            </div>
+            <input type="number" class="form-control form-control-lg" id="mileage" name="mileage" value="" placeholder="0" onkeypress="return dontSubmit(event)" readonly />
+          </fieldset>
+
+          <div id="message-below" class="alert alert-success" role="alert"></div>
+
+          <fieldset class="form-group">
+            <button id="submit" class="btn btn-block btn-lg btn-primary" type="submit">Submit</button>
+          </fieldset>
+        </div>
+      </form>
+    </div>
+
+    <script type="text/javascript" src="index.js"></script>
+
+    <script async defer src="https://apis.google.com/js/api.js"
+      onload="this.onload=function(){};handleClientLoad()"
+      onreadystatechange="if (this.readyState === 'complete') this.onload()">
+    </script>
+
+    <script
+  src="http://code.jquery.com/jquery-3.3.1.slim.min.js"
+  integrity="sha256-3edrmyuQ0w65f8gfBsqowzjJe2iM6n0nKciPUp8y+7E="
+  crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+  </body>
+</html>
