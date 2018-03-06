@@ -16,6 +16,7 @@ const form = document.forms[formName];
 const $id = document.getElementById.bind(document);
 
 const spreadsheetId = '1witWYvqss5Y_7dDARZjXuixkh8ySaaEtnLyHkBk4lYc';
+const spreadsheetLink = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
 const year = new Date().getFullYear();
 const mileageSheet = `${year} Mileage`;
 const settingsSheet = 'Settings';
@@ -26,7 +27,8 @@ let presets = [];
 let submittingMileage = false;
 let maxMileage = 0;
 
-$id("date").valueAsDate = new Date()
+$id('date').valueAsDate = new Date();
+$id('spreadsheet-link').href = spreadsheetLink;
 
 setMessage('info', 'Loading Google APIs...');
 
@@ -374,7 +376,7 @@ function submitMileage() {
     .then(updates => {
       console.log(updates);
       setSubmitEnabled(true);
-      setMessage('success', `Saved <a href="https://docs.google.com/spreadsheets/d/1witWYvqss5Y_7dDARZjXuixkh8ySaaEtnLyHkBk4lYc/edit" class="alert-link">${updates.updatedRange}</a>`);
+      setMessage('success', `Saved <a href="${spreadsheetLink}" target="_blank" class="alert-link">${updates.updatedRange}</a>`);
 
       lastRowNum += 1;
       $id('start').value = end || '';
