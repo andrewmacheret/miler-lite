@@ -22,15 +22,23 @@ const mileageSheet = `${year} Mileage`;
 const settingsSheet = 'Settings';
 const startingRow = 4;
 
-let lastRowNum = 0;
-let presets = [];
+let settings = {
+  lastRowNum: 0,
+  presets: [],
+  maxMileage: 0
+}
 let submittingMileage = false;
-let maxMileage = 0;
 
 $id('date').valueAsDate = new Date();
 $id('spreadsheet-link').href = spreadsheetLink;
 
 setMessage('info', 'Loading Google APIs...');
+let autoreload = setTimeout(function() {
+  setMessage('info', 'Google APIs timed out, reloading...');
+  window.location.reload();
+}, 5000);
+
+loadSheetsCached();
 
 // Escape a string for HTML interpolation.
 function escapeHTML(string) {
@@ -65,6 +73,8 @@ function initClient() {
     discoveryDocs: DISCOVERY_DOCS,
     scope: SCOPES
   }).then(() => {
+    window.clearTimeout(autoreload);
+
     // Listen for sign-in state changes.
     gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
 
@@ -175,23 +185,26 @@ function appendSpreadsheetRow(range, row) {
   });
 }
 
+function loadSheetsCached() {
+  let cached = window.localStorage.getItem('settings');
+  if (!cached) return;
+  
+  settings = JSON.parse(window.localStorage.getItem('settings'));
+
+  displaySettings();
+}
 
 function loadSheets() {
   setMessage('info', 'Loading sheets...');
 
-  Promise.all([
-    getSpreadsheetValues(`'${mileageSheet}'!A1:F`),
-    getSpreadsheetValues(`'${settingsSheet}'!A1:E`)
-  ]).then(data => {
-    if (data[0].length === 0 || data[1].length === 0) {
+  getSpreadsheetValues(`'${settingsSheet}'!A1:J`)
+  .then(data => {
+    if (data.length === 0) {
       setMessage('danger', 'No data found.');
       return;
     }
 
-    loadHistory(data[0]);
-    loadSettings(data[1]);
-
-    form.style.display = '';
+    loadSettings(data);
 
     setMessage('success', 'Loaded!');
   }).catch(error => {
@@ -211,44 +224,27 @@ function dontSubmit(event) {
   return true;
 }
 
-function loadHistory(values) {
-  for (let i = startingRow - 1; i < values.length; i++) {
-    const [date, business, purpose, destination, start, end] = values[i];
-    if (date) {
-      maxMileage = Math.max(maxMileage, parseInt(start, 10) || 0, parseInt(end, 10) || 0);
-    }
-  }
-  lastRowNum = values.length + 1;
-
-  $id('start').value = maxMileage || '';
-  $id('end').value = maxMileage || '';
-  recalcMileage();
-}
-
 function loadSettings(values) {
   // business
-  let businessHtml = '';
+  settings.businessHtml = '';
   for (let r = 2; r < values.length; r++) {
     const business = (values[r][0] || '').trim();
     if (business !== '') {
       // add business
 
       const index = r - 2;
-      businessHtml += $id('template-business-choice').innerHTML
+      settings.businessHtml += $id('template-business-choice').innerHTML
         .replace(/\{\{INDEX\}\}/g, ''+index)
         .replace(/\{\{VALUE\}\}/g, escapeHTML(business))
         .replace(/\{\{LABEL\}\}/g, escapeHTML(business))
         .replace(/\{\{BUTTON_ACTIVE\}\}/g, index === 0 ? 'active' : '');
     }
   }
-  $id('business-choices').innerHTML = businessHtml;
-  // make sure at least one is checked
-  form.business[0].checked = true;
 
   // presets
-  presets = [];
-  presets.push({purpose: '', destination: '', mileage: 0});
-  let presetsHtml = $id('template-preset').innerHTML
+  settings.presets = [];
+  settings.presets.push({purpose: '', destination: '', mileage: 0});
+  settings.presetsHtml = $id('template-preset').innerHTML
     .replace(/\{\{INDEX\}\}/g, 0)
     .replace(/\{\{PURPOSE\}\}/g, 'Reset')
     .replace(/\{\{BUTTON_CLASS\}\}/g, 'btn-outline-secondary');
@@ -260,18 +256,39 @@ function loadSettings(values) {
       // add preset button
 
       const index = r - 1;
-      presets[index] = {purpose, destination, mileage};
-      presetsHtml += $id('template-preset').innerHTML
+      settings.presets[index] = {purpose, destination, mileage};
+      settings.presetsHtml += $id('template-preset').innerHTML
         .replace(/\{\{INDEX\}\}/g, ''+index)
         .replace(/\{\{PURPOSE\}\}/g, escapeHTML(purpose))
         .replace(/\{\{BUTTON_CLASS\}\}/g, 'btn-outline-primary');
     }
   }
-  $id('presets').innerHTML = presetsHtml;
+
+  // values
+  settings.maxMileage = parseInt(values[2][8], 10) || 0;
+  settings.lastRowNum = parseInt(values[2][9], 10) || 4;
+
+  window.localStorage.setItem('settings', JSON.stringify(settings));
+
+  displaySettings();
+}
+
+function displaySettings() {
+  $id('business-choices').innerHTML = settings.businessHtml;
+  // make sure at least one is checked
+  form.business[0].checked = true;
+
+  $id('presets').innerHTML = settings.presetsHtml;
+
+  $id('start').value = settings.maxMileage || '';
+  $id('end').value = settings.maxMileage || '';
+  recalcMileage();
+
+  form.style.display = '';
 }
 
 function loadPreset(index) {
-  const {purpose, destination, mileage} = presets[index];
+  const {purpose, destination, mileage} = settings.presets[index];
   $id('purpose').value = purpose;
   $id('destination').value = destination;
   $id('end').value = ((parseInt($id('start').value, 10) || 0) + mileage) || '';
@@ -328,8 +345,8 @@ function validate({date, business, purpose, destination, start, end}) {
     return false;
   }
 
-  if (start < maxMileage) {
-    setMessage('warning', `Start must be at least ${maxMileage}.`);
+  if (start < settings.maxMileage) {
+    setMessage('warning', `Start must be at least ${settings.maxMileage}.`);
     $id('start').focus();
     $id('start').classList.add('is-invalid');
     return false;
@@ -368,7 +385,7 @@ function submitMileage() {
       return;
     }
 
-    const row = [date, business, purpose, destination, start, end, `=F${lastRowNum}-E${lastRowNum}`, `=G${lastRowNum}*Settings!\$G\$3`];
+    const row = [date, business, purpose, destination, start, end, `=F${settings.lastRowNum}-E${settings.lastRowNum}`, `=G${settings.lastRowNum}*Settings!\$G\$3`];
 
     setSubmitEnabled(false);
 
@@ -378,10 +395,13 @@ function submitMileage() {
       setSubmitEnabled(true);
       setMessage('success', `Saved <a href="${spreadsheetLink}" target="_blank" class="alert-link">${updates.updatedRange}</a>`);
 
-      lastRowNum += 1;
+      settings.lastRowNum += 1;
+      if (settings.maxMileage < end) settings.maxMileage = end
       $id('start').value = end || '';
       $id('end').value = (end + (end - start)) || '';
       recalcMileage();
+
+      window.localStorage.setItem('settings', JSON.stringify(settings));
     }).catch(error => {
       setSubmitEnabled(true);
       setMessage('danger', 'Error: ' + error);
