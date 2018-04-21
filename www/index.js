@@ -29,7 +29,10 @@ let settings = {
 }
 let submittingMileage = false;
 
-$id('date').valueAsDate = new Date();
+function removeTime(date) {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+$id('date').valueAsDate = removeTime(new Date());
 $id('spreadsheet-link').href = spreadsheetLink;
 
 setMessage('info', 'Loading Google APIs...');
