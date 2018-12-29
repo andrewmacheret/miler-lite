@@ -19,7 +19,7 @@ const spreadsheetId = '1witWYvqss5Y_7dDARZjXuixkh8ySaaEtnLyHkBk4lYc';
 const spreadsheetLink = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
 const year = new Date().getFullYear();
 const mileageSheet = `${year} Mileage`;
-const settingsSheet = 'Settings';
+const settingsSheet = `${year} Settings`;
 const startingRow = 4;
 
 let settings = {
