@@ -388,7 +388,7 @@ function submitMileage() {
       return;
     }
 
-    const row = [date, business, purpose, destination, start, end, `=F${settings.lastRowNum}-E${settings.lastRowNum}`, `=G${settings.lastRowNum}*Settings!\$G\$3`];
+    const row = [date, business, purpose, destination, start, end, `=F${settings.lastRowNum}-E${settings.lastRowNum}`, `=G${settings.lastRowNum}*'${settingsSheet}'!\$G\$3`];
 
     setSubmitEnabled(false);
 
