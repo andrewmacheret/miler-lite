@@ -1,7 +1,12 @@
 // OAuth client ID from the Google Cloud console. It's public, and Google only
 // accepts it from its authorized origins (localhost:8000, andrewmacheret.com)
 const CLIENT_ID = '248237455343-92pm91eir0o4mh86obkq2v60u8a30dkp.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets';
+// The file picker needs the Google Cloud project number and an API key. The
+// key is public too, and only works from andrewmacheret.com for the picker
+const APP_ID = '248237455343';
+const PICKER_API_KEY = 'AIzaSyAxkzeJQJKcw5kZ_P-NXqG15scFqMIrf3A';
+// drive.file only reaches spreadsheets the user picks or Miler Lite creates
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 const formName = 'mileage-form';
@@ -9,12 +14,15 @@ const form = document.forms[formName];
 
 const $id = document.getElementById.bind(document);
 
-const spreadsheetId = '1witWYvqss5Y_7dDARZjXuixkh8ySaaEtnLyHkBk4lYc';
-const spreadsheetLink = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
 const year = new Date().getFullYear();
 const mileageSheet = `${year} Mileage`;
 const settingsSheet = `${year} Settings`;
 const startingRow = 4;
+
+// The spreadsheets this browser has used, newest first
+const sheetsKey = 'miler-lite-sheets';
+const maxRecentSheets = 10;
+let sheetList = loadSheetList();
 
 let settings = {
   lastRowNum: 0,
@@ -23,16 +31,22 @@ let settings = {
 }
 let submittingMileage = false;
 let tokenClient;
-let accessToken = null;
+// Goalie and Miler Lite share one Google sign-in, so they share the saved token
+const tokenKey = 'daily-tracking-token';
+let accessToken = loadSavedToken();
+let signedOut = false;
+
+// Older versions kept settings under a key that Goalie used too
+window.localStorage.removeItem('settings');
 
 function removeTime(date) {
   return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
 }
 $id('date').valueAsDate = removeTime(new Date());
-$id('spreadsheet-link').href = spreadsheetLink;
 
 setMessage('info', 'Loading Google sign-in...');
-
+$id('remove-button').onclick = handleRemoveClick;
+renderSheetControls();
 loadSheetsCached();
 
 // Escape a string for HTML interpolation.
@@ -49,6 +63,67 @@ function escapeHTML(string) {
   });
 }
 
+function loadSheetList() {
+  try {
+    const list = JSON.parse(window.localStorage.getItem(sheetsKey));
+    if (list && Array.isArray(list.recent)) return list;
+  } catch (error) {
+    console.error(error);
+  }
+  return {current: null, recent: []};
+}
+
+function currentSheetId() {
+  return sheetList.current;
+}
+
+function spreadsheetLink() {
+  return `https://docs.google.com/spreadsheets/d/${currentSheetId()}/edit`;
+}
+
+function rememberSheet(id, name) {
+  sheetList.recent = [{id, name}, ...sheetList.recent.filter(sheet => sheet.id !== id)].slice(0, maxRecentSheets);
+  sheetList.current = id;
+  window.localStorage.setItem(sheetsKey, JSON.stringify(sheetList));
+  renderSheetControls();
+}
+
+function renderSheetControls() {
+  const select = $id('sheet-select');
+  select.innerHTML = sheetList.recent.map(sheet =>
+    `<option value="${escapeHTML(sheet.id)}">${escapeHTML(sheet.name)}</option>`).join('');
+  select.value = currentSheetId() || '';
+  select.style.display = sheetList.recent.length ? '' : 'none';
+  $id('remove-button').style.display = currentSheetId() ? '' : 'none';
+
+  const link = $id('spreadsheet-link');
+  link.style.display = currentSheetId() ? 'inline-block' : 'none';
+  link.href = spreadsheetLink();
+}
+
+function handleSheetSelect(event) {
+  const sheet = sheetList.recent.find(sheet => sheet.id === event.target.value);
+  if (!sheet) return;
+  rememberSheet(sheet.id, sheet.name);
+  form.style.display = 'none';
+  loadSheetsCached();
+  if (accessToken) loadSheets();
+}
+
+// Takes the spreadsheet off this browser's list. It stays in Google Drive
+function handleRemoveClick() {
+  const id = currentSheetId();
+  if (!id) return;
+  window.localStorage.removeItem(settingsKey());
+  sheetList.recent = sheetList.recent.filter(sheet => sheet.id !== id);
+  sheetList.current = sheetList.recent.length ? sheetList.recent[0].id : null;
+  window.localStorage.setItem(sheetsKey, JSON.stringify(sheetList));
+  renderSheetControls();
+  form.style.display = 'none';
+  loadSheetsCached();
+  updateSigninStatus(!!accessToken);
+}
+
 
 /**
  *  Called when the Google Identity Services script loads.
@@ -63,7 +138,33 @@ function handleClientLoad() {
 
   $id('authorize-button').onclick = handleAuthClick;
   $id('signout-button').onclick = handleSignoutClick;
-  updateSigninStatus(false);
+  $id('sheet-select').onchange = handleSheetSelect;
+  $id('pick-button').onclick = handlePickClick;
+  $id('create-button').onclick = handleCreateClick;
+  updateSigninStatus(!!accessToken);
+}
+
+// Access tokens last an hour. Keeping it until then means a reload doesn't
+// ask the user to sign in again
+function loadSavedToken() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(tokenKey));
+    if (saved && saved.expiresAt > Date.now()) return saved.token;
+  } catch (error) {
+    console.error(error);
+  }
+  return null;
+}
+
+function saveToken(token, expiresInSeconds) {
+  // Stop a minute early so a request doesn't start with an almost-expired token
+  const expiresAt = Date.now() + (expiresInSeconds - 60) * 1000;
+  window.localStorage.setItem(tokenKey, JSON.stringify({token, expiresAt}));
+}
+
+function forgetToken() {
+  accessToken = null;
+  window.localStorage.removeItem(tokenKey);
 }
 
 function handleClientLoadError() {
@@ -76,10 +177,11 @@ function handleTokenResponse(response) {
     return;
   }
   if (!google.accounts.oauth2.hasGrantedAllScopes(response, SCOPES)) {
-    setMessage('warning', 'Miler Lite needs access to Google Sheets to work.');
+    setMessage('warning', 'Miler Lite needs access to its spreadsheets to work.');
     return;
   }
   accessToken = response.access_token;
+  saveToken(accessToken, Number(response.expires_in) || 3600);
   updateSigninStatus(true);
 }
 
@@ -88,14 +190,15 @@ function handleTokenResponse(response) {
  *  appropriately. After a sign-in, the API is called.
  */
 function updateSigninStatus(isSignedIn) {
-  if (isSignedIn) {
-    $id('authorize-button').style.display = 'none';
-    $id('signout-button').style.display = '';
+  $id('authorize-button').style.display = isSignedIn ? 'none' : '';
+  $id('signout-button').style.display = isSignedIn ? '' : 'none';
+  $id('sheet-buttons').style.display = isSignedIn ? '' : 'none';
+  if (!isSignedIn) {
+    setMessage('warning', 'Click Authorize to sign in with Google.');
+  } else if (currentSheetId()) {
     loadSheets();
   } else {
-    $id('authorize-button').style.display = '';
-    $id('signout-button').style.display = 'none';
-    setMessage('warning', 'Need authorization.');
+    setMessage('info', 'Click <b>Open</b> to choose your Miler Lite spreadsheet, or <b>New</b> to create one.');
   }
 }
 
@@ -104,16 +207,106 @@ function updateSigninStatus(isSignedIn) {
  */
 function handleAuthClick(event) {
   // An empty prompt skips the consent screen once the user has agreed to it
-  tokenClient.requestAccessToken({prompt: ''});
+  tokenClient.requestAccessToken({prompt: signedOut ? 'select_account' : ''});
 }
 
 /**
  *  Sign out the user upon button click.
  */
 function handleSignoutClick(event) {
-  google.accounts.oauth2.revoke(accessToken);
-  accessToken = null;
+  // Forget the token without revoking it. Revoking would also drop access to
+  // the spreadsheets the user picked, and they'd have to pick them again
+  forgetToken();
+  signedOut = true;
   updateSigninStatus(false);
+}
+
+function handlePickClick() {
+  if (typeof gapi === 'undefined') {
+    setMessage('warning', 'The file picker is still loading. Try again in a moment.');
+    return;
+  }
+  gapi.load('picker', () => {
+    const view = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setMode(google.picker.DocsViewMode.LIST);
+    new google.picker.PickerBuilder()
+      .setTitle('Choose your Miler Lite spreadsheet')
+      .addView(view)
+      .setOAuthToken(accessToken)
+      .setDeveloperKey(PICKER_API_KEY)
+      .setAppId(APP_ID)
+      .setCallback(handlePicked)
+      .build()
+      .setVisible(true);
+  });
+}
+
+function handlePicked(data) {
+  if (data[google.picker.Response.ACTION] !== google.picker.Action.PICKED) return;
+  const doc = data[google.picker.Response.DOCUMENTS][0];
+  rememberSheet(doc[google.picker.Document.ID], doc[google.picker.Document.NAME]);
+  form.style.display = 'none';
+  loadSheetsCached();
+  loadSheets();
+}
+
+function handleCreateClick() {
+  setMessage('info', 'Creating a new Miler Lite spreadsheet...');
+  const body = {
+    properties: {title: 'Miler Lite mileage'},
+    sheets: yearTabs().map(tab => ({properties: {title: tab.title}, data: [{rowData: tab.rows}]})),
+  };
+  sheetsFetch('', {method: 'POST', body: JSON.stringify(body)})
+  .then(result => {
+    rememberSheet(result.spreadsheetId, result.properties.title);
+    loadSheets();
+  }).catch(error => {
+    console.error(error);
+    setMessage('danger', 'Error: ' + error);
+  });
+}
+
+// Adds this year's tabs to the current spreadsheet
+function addYearTabs() {
+  setMessage('info', `Adding the ${year} tabs...`);
+  const requests = [];
+  yearTabs().forEach((tab, index) => {
+    // Pick sheet IDs up front so the cells can go in the same request
+    const sheetId = year * 10 + index;
+    requests.push({addSheet: {properties: {sheetId, title: tab.title, index}}});
+    requests.push({updateCells: {start: {sheetId, rowIndex: 0, columnIndex: 0}, rows: tab.rows, fields: 'userEnteredValue'}});
+  });
+  sheetsFetch(`/${currentSheetId()}:batchUpdate`, {method: 'POST', body: JSON.stringify({requests})})
+  .then(() => loadSheets())
+  .catch(error => {
+    console.error(error);
+    setMessage('danger', 'Error: ' + error);
+  });
+}
+
+function starterCell(value) {
+  if (value === null) return {};
+  return {userEnteredValue: typeof value === 'number' ? {numberValue: value}
+    : value.startsWith('=') ? {formulaValue: value} : {stringValue: value}};
+}
+
+// A year's mileage and settings tabs in the layout Miler Lite reads
+function yearTabs() {
+  const tabs = [
+    {title: mileageSheet, rows: [
+      [`Miler Lite adds a row here each time you submit.`],
+      [],
+      ['Date', 'Business', 'Purpose', 'Destination', 'Start', 'End', 'Miles', 'Amount'],
+    ]},
+    {title: settingsSheet, rows: [
+      ['List businesses in column A and saved trips in columns C to E, from row 3 down. Set your rate per mile in G3.'],
+      ['Business', null, 'Purpose', 'Destination', 'Miles', null, 'Rate per mile', null, 'Highest odometer', 'Next row'],
+      ['Work', null, 'Office', 'Main office', 10, null, 0.7, null,
+        `=MAX('${mileageSheet}'!F${startingRow}:F)`, `=COUNTA('${mileageSheet}'!A${startingRow}:A)+${startingRow}`],
+      ['Side business', null, 'Client visit', 'Client office', 25],
+    ]},
+  ];
+  return tabs.map(tab => ({title: tab.title, rows: tab.rows.map(row => ({values: row.map(starterCell)}))}));
 }
 
 /**
@@ -148,17 +341,16 @@ function endChanged() {
   recalcMileage();
 }
 
-// Calls the Sheets API for this spreadsheet and rejects with the error message
+// Calls the Sheets API and rejects with the error message
 async function sheetsFetch(path, options = {}) {
-  const response = await fetch(`${SHEETS_API}/${spreadsheetId}${path}`, {
-    ...options,
-    headers: {...options.headers, Authorization: `Bearer ${accessToken}`},
-  });
+  const headers = {...options.headers, Authorization: `Bearer ${accessToken}`};
+  if (options.body) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`${SHEETS_API}${path}`, {...options, headers});
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     // Access tokens expire after an hour, so ask to sign in again
     if (response.status === 401) {
-      accessToken = null;
+      forgetToken();
       updateSigninStatus(false);
       throw 'Sign-in expired. Click Authorize to sign in again.';
     }
@@ -167,8 +359,11 @@ async function sheetsFetch(path, options = {}) {
   return body;
 }
 
-function getSpreadsheetValues(range) {
-  return sheetsFetch(`/values/${encodeURIComponent(range)}`).then(result => result.values || []);
+function getSpreadsheet(range) {
+  const params = new URLSearchParams({includeGridData: 'true',
+    fields: 'properties.title,sheets.data.rowData.values.formattedValue'});
+  // Tab names have spaces, which URLSearchParams would turn into +
+  return sheetsFetch(`/${currentSheetId()}?ranges=${encodeURIComponent(range)}&${params}`);
 }
 
 function appendSpreadsheetRow(range, row) {
@@ -177,27 +372,39 @@ function appendSpreadsheetRow(range, row) {
     insertDataOption: 'INSERT_ROWS',
     includeValuesInResponse: 'false'
   });
-  return sheetsFetch(`/values/${encodeURIComponent(range)}:append?${params}`, {
+  return sheetsFetch(`/${currentSheetId()}/values/${encodeURIComponent(range)}:append?${params}`, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({values: [row]}),
   }).then(result => result.updates);
 }
 
-function loadSheetsCached() {
-  let cached = window.localStorage.getItem('settings');
-  if (!cached) return;
-  
-  settings = JSON.parse(window.localStorage.getItem('settings'));
+function settingsKey() {
+  return `miler-lite-settings-${currentSheetId()}`;
+}
 
-  displaySettings();
+function loadSheetsCached() {
+  if (!currentSheetId()) return;
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(settingsKey()));
+    if (cached) {
+      settings = cached;
+      displaySettings();
+    }
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function loadSheets() {
-  setMessage('info', 'Loading sheets...');
+  setMessage('info', 'Loading spreadsheet...');
 
-  getSpreadsheetValues(`'${settingsSheet}'!A1:J`)
-  .then(data => {
+  getSpreadsheet(`'${settingsSheet}'!A1:J`)
+  .then(result => {
+    // Keep the saved name up to date if the spreadsheet was renamed
+    rememberSheet(currentSheetId(), result.properties.title);
+
+    const rowData = result.sheets[0].data[0].rowData || [];
+    const data = rowData.map(row => (row.values || []).map(cell => cell.formattedValue));
     if (data.length === 0) {
       setMessage('danger', 'No data found.');
       return;
@@ -207,7 +414,16 @@ function loadSheets() {
 
     setMessage('success', 'Loaded!');
   }).catch(error => {
-    setMessage('danger', 'Error: ' + error);
+    console.error(error);
+    if (String(error).includes('Unable to parse range')) {
+      setMessage('warning', `This spreadsheet has no ${year} tabs yet. ` +
+        `<button type="button" class="btn btn-sm btn-primary ml-2" onclick="addYearTabs()">Add ${year} tabs</button>`);
+    } else if (/permission|not found/i.test(error)) {
+      // drive.file only reaches spreadsheets this Google account picked in Miler Lite
+      setMessage('danger', 'Miler Lite can\'t open this spreadsheet with this Google account. Click <b>Open</b> to choose it again.');
+    } else {
+      setMessage('danger', 'Error: ' + error);
+    }
   })
 }
 
@@ -264,10 +480,11 @@ function loadSettings(values) {
   }
 
   // values
-  settings.maxMileage = parseInt(values[2][8], 10) || 0;
-  settings.lastRowNum = parseInt(values[2][9], 10) || 4;
+  const valuesRow = values[2] || [];
+  settings.maxMileage = parseInt(valuesRow[8], 10) || 0;
+  settings.lastRowNum = parseInt(valuesRow[9], 10) || 4;
 
-  window.localStorage.setItem('settings', JSON.stringify(settings));
+  window.localStorage.setItem(settingsKey(), JSON.stringify(settings));
 
   displaySettings();
 }
@@ -392,7 +609,7 @@ function submitMileage() {
     .then(updates => {
       console.log(updates);
       setSubmitEnabled(true);
-      setMessage('success', `Saved <a href="${spreadsheetLink}" target="_blank" class="alert-link">${updates.updatedRange}</a>`);
+      setMessage('success', `Saved <a href="${spreadsheetLink()}" target="_blank" class="alert-link">${updates.updatedRange}</a>`);
 
       settings.lastRowNum += 1;
       if (settings.maxMileage < end) settings.maxMileage = end
@@ -400,7 +617,7 @@ function submitMileage() {
       $id('end').value = (end + (end - start)) || '';
       recalcMileage();
 
-      window.localStorage.setItem('settings', JSON.stringify(settings));
+      window.localStorage.setItem(settingsKey(), JSON.stringify(settings));
     }).catch(error => {
       setSubmitEnabled(true);
       setMessage('danger', 'Error: ' + error);

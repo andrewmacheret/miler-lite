@@ -30,6 +30,17 @@
       </div>
     </div>
 
+    <div id="sheet-controls" class="container mb-2">
+      <div class="d-flex">
+        <select id="sheet-select" class="custom-select mr-2" style="display: none;" aria-label="Spreadsheet"></select>
+        <button id="remove-button" type="button" class="btn btn-outline-danger mr-2 flex-shrink-0" style="display: none;" title="Remove this spreadsheet from the list. It stays in your Google Drive">Remove</button>
+        <div id="sheet-buttons" class="btn-group flex-shrink-0" style="display: none;">
+          <button id="pick-button" type="button" class="btn btn-outline-secondary" title="Choose a spreadsheet from Google Drive">Open</button>
+          <button id="create-button" type="button" class="btn btn-outline-secondary" title="Create a new Miler Lite spreadsheet">New</button>
+        </div>
+      </div>
+    </div>
+
     <div id="message-wrapper" class="container">
       <div id="message" class="alert alert-success" role="alert"></div>
     </div>
@@ -130,6 +141,8 @@
       onload="handleClientLoad()"
       onerror="handleClientLoadError()">
     </script>
+
+    <script async defer src="https://apis.google.com/js/api.js"></script>
 
     <script
       src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
