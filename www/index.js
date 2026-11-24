@@ -1,14 +1,8 @@
-// Client ID and API key from the Developer Console
-//localhost:8000, andrewmacheret.com
-const CLIENT_ID = '303548077940-ov8iafec5pqhrd457fhe8sb2q5ak6o8s.apps.googleusercontent.com';
-const API_KEY = 'AIzaSyAF3bxFGxELOH7aK3imyc__dpRuo9M2j5M';
-
-// Array of API discovery doc URLs for APIs used by the quickstart
-const DISCOVERY_DOCS = ["https://sheets.googleapis.com/$discovery/rest?version=v4"];
-
-// Authorization scopes required by the API; multiple scopes can be
-// included, separated by spaces.
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets";
+// OAuth client ID from the Google Cloud console. It's public, and Google only
+// accepts it from its authorized origins (localhost:8000, andrewmacheret.com)
+const CLIENT_ID = '248237455343-92pm91eir0o4mh86obkq2v60u8a30dkp.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets';
+const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 const formName = 'mileage-form';
 const form = document.forms[formName];
@@ -28,6 +22,8 @@ let settings = {
   maxMileage: 0
 }
 let submittingMileage = false;
+let tokenClient;
+let accessToken = null;
 
 function removeTime(date) {
   return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -35,11 +31,7 @@ function removeTime(date) {
 $id('date').valueAsDate = removeTime(new Date());
 $id('spreadsheet-link').href = spreadsheetLink;
 
-setMessage('info', 'Loading Google APIs...');
-let autoreload = setTimeout(function() {
-  setMessage('info', 'Google APIs timed out, reloading...');
-  window.location.reload();
-}, 5000);
+setMessage('info', 'Loading Google sign-in...');
 
 loadSheetsCached();
 
@@ -59,33 +51,36 @@ function escapeHTML(string) {
 
 
 /**
- *  On load, called to load the auth2 library and API client library.
+ *  Called when the Google Identity Services script loads.
  */
 function handleClientLoad() {
-  gapi.load('client:auth2', initClient);
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: handleTokenResponse,
+    error_callback: error => setMessage('danger', 'Sign-in failed: ' + escapeHTML(error.message || error.type)),
+  });
+
+  $id('authorize-button').onclick = handleAuthClick;
+  $id('signout-button').onclick = handleSignoutClick;
+  updateSigninStatus(false);
 }
 
-/**
- *  Initializes the API client library and sets up sign-in state
- *  listeners.
- */
-function initClient() {
-  gapi.client.init({
-    apiKey: API_KEY,
-    clientId: CLIENT_ID,
-    discoveryDocs: DISCOVERY_DOCS,
-    scope: SCOPES
-  }).then(() => {
-    window.clearTimeout(autoreload);
+function handleClientLoadError() {
+  setMessage('danger', 'Could not load Google sign-in. Check your connection and reload.');
+}
 
-    // Listen for sign-in state changes.
-    gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
-
-    // Handle the initial sign-in state.
-    updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
-    $id('authorize-button').onclick = handleAuthClick;
-    $id('signout-button').onclick = handleSignoutClick;
-  });
+function handleTokenResponse(response) {
+  if (response.error) {
+    setMessage('danger', 'Sign-in failed: ' + escapeHTML(response.error_description || response.error));
+    return;
+  }
+  if (!google.accounts.oauth2.hasGrantedAllScopes(response, SCOPES)) {
+    setMessage('warning', 'Miler Lite needs access to Google Sheets to work.');
+    return;
+  }
+  accessToken = response.access_token;
+  updateSigninStatus(true);
 }
 
 /**
@@ -108,14 +103,17 @@ function updateSigninStatus(isSignedIn) {
  *  Sign in the user upon button click.
  */
 function handleAuthClick(event) {
-  gapi.auth2.getAuthInstance().signIn();
+  // An empty prompt skips the consent screen once the user has agreed to it
+  tokenClient.requestAccessToken({prompt: ''});
 }
 
 /**
  *  Sign out the user upon button click.
  */
 function handleSignoutClick(event) {
-  gapi.auth2.getAuthInstance().signOut();
+  google.accounts.oauth2.revoke(accessToken);
+  accessToken = null;
+  updateSigninStatus(false);
 }
 
 /**
@@ -150,42 +148,40 @@ function endChanged() {
   recalcMileage();
 }
 
-function getSpreadsheetValues(range) {
-  return new Promise((resolve, reject) => {
-    gapi.client.sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range
-    }).then(response => {
-      resolve(response.result.values);
-    }, response => {
-      reject(response.result.error.message);
-    });
+// Calls the Sheets API for this spreadsheet and rejects with the error message
+async function sheetsFetch(path, options = {}) {
+  const response = await fetch(`${SHEETS_API}/${spreadsheetId}${path}`, {
+    ...options,
+    headers: {...options.headers, Authorization: `Bearer ${accessToken}`},
   });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    // Access tokens expire after an hour, so ask to sign in again
+    if (response.status === 401) {
+      accessToken = null;
+      updateSigninStatus(false);
+      throw 'Sign-in expired. Click Authorize to sign in again.';
+    }
+    throw escapeHTML(body.error ? body.error.message : response.statusText);
+  }
+  return body;
+}
+
+function getSpreadsheetValues(range) {
+  return sheetsFetch(`/values/${encodeURIComponent(range)}`).then(result => result.values || []);
 }
 
 function appendSpreadsheetRow(range, row) {
-
-  return new Promise((resolve, reject) => {
-    const params = {
-      spreadsheetId,
-      range,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      includeValuesInResponse: false
-    };
-
-    const valueRange = {
-      'values': [
-        row
-      ],
-    };
-
-    gapi.client.sheets.spreadsheets.values.append(params, valueRange).then(response => {
-      resolve(response.result.updates);
-    }, response => {
-      reject(response.result.error.message);
-    });
+  const params = new URLSearchParams({
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    includeValuesInResponse: 'false'
   });
+  return sheetsFetch(`/values/${encodeURIComponent(range)}:append?${params}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({values: [row]}),
+  }).then(result => result.updates);
 }
 
 function loadSheetsCached() {
