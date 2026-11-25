@@ -224,6 +224,78 @@ textarea::placeholder {
   font-size: 1.1rem;
 }
 
+/* the editor */
+
+.item {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: var(--control);
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.item-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* destination and miles line up under the purpose, past the handle */
+.trip-details {
+  margin-top: 0.5rem;
+  padding-left: 2.35rem;
+}
+
+.item-row .e-miles {
+  flex: 0 0 6.5rem;
+}
+
+/* touch-action: none stops a drag on the handle from scrolling the page */
+.drag-handle {
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 1.25rem;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.dragging {
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--shadow);
+  opacity: 0.9;
+}
+
+.dragging .drag-handle {
+  color: var(--accent);
+  cursor: grabbing;
+}
+
+.add-item {
+  width: 100%;
+  margin-bottom: 1.25rem;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editor-actions .primary {
+  flex: 1;
+}
+
 /* the Remove question */
 
 dialog {
@@ -281,5 +353,9 @@ dialog p {
   .odometer {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .item-row .e-miles {
+    flex-basis: 5rem;
   }
 }

@@ -43,6 +43,7 @@
           <span id="sheet-buttons" style="display: none;">
             <button id="pick-button" type="button" class="control small" title="Choose a spreadsheet from Google Drive">Open</button>
             <button id="create-button" type="button" class="control small" title="Create a new Miler Lite spreadsheet">New</button>
+            <button id="edit-button" type="button" class="control small" title="Edit this spreadsheet's businesses, saved trips and rate">Edit</button>
           </span>
         </div>
       </div>
@@ -51,7 +52,7 @@
 
       <form id="mileage-form" name="mileage-form" class="stage" action="#" onsubmit="submitMileage(); return false;" style="display: none;">
         <fieldset class="field">
-          <legend>Presets</legend>
+          <legend>Saved trips</legend>
           <template id="template-preset">
             <button id="preset-{{INDEX}}" type="button" class="control small preset {{BUTTON_CLASS}}" onclick="loadPreset({{INDEX}});">{{PURPOSE}}</button>
           </template>
@@ -102,6 +103,47 @@
         <button id="submit" class="control primary submit" type="submit">Submit</button>
         <div id="message-below" class="message" role="status"></div>
       </form>
+
+      <div id="editor" class="stage" style="display: none;">
+        <div class="field">
+          <label class="field-label" for="editor-title">Spreadsheet name</label>
+          <input id="editor-title" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+          <label class="field-label" for="editor-rate">Rate per mile</label>
+          <input id="editor-rate" type="number" inputmode="decimal" min="0" step="any" placeholder="0.70">
+        </div>
+        <div class="field-label">Businesses</div>
+        <div id="editor-businesses"></div>
+        <button id="editor-add-business" type="button" class="control small add-item">Add business</button>
+        <div class="field-label">Saved trips</div>
+        <div id="editor-trips"></div>
+        <button id="editor-add-trip" type="button" class="control small add-item">Add saved trip</button>
+        <div class="editor-actions">
+          <button id="editor-save" type="button" class="control primary">Save</button>
+          <button id="editor-cancel" type="button" class="control">Cancel</button>
+        </div>
+      </div>
+
+      <template id="template-editor-business">
+        <div class="item-row">
+          <button type="button" class="drag-handle" title="Drag to reorder" aria-label="Move business. Drag, or press the up and down arrow keys">☰</button>
+          <input type="text" class="e-name" placeholder="Business" aria-label="Business">
+          <button type="button" class="control small danger e-remove">Remove</button>
+        </div>
+      </template>
+
+      <template id="template-editor-trip">
+        <div class="item-row">
+          <button type="button" class="drag-handle" title="Drag to reorder" aria-label="Move saved trip. Drag, or press the up and down arrow keys">☰</button>
+          <input type="text" class="e-purpose" placeholder="Purpose" aria-label="Purpose">
+          <button type="button" class="control small danger e-remove">Remove</button>
+        </div>
+        <div class="item-row trip-details">
+          <input type="text" class="e-destination" placeholder="Destination" aria-label="Destination">
+          <input type="number" class="e-miles" inputmode="numeric" min="0" step="1" placeholder="Miles" aria-label="Miles">
+        </div>
+      </template>
 
       <dialog id="remove-dialog">
         <form method="dialog">

@@ -26,11 +26,13 @@ const maxRecentSheets = 10;
 let sheetList = loadSheetList();
 
 // Saved settings hold the form's HTML, so bump this when the templates change
-const settingsVersion = 2;
+const settingsVersion = 3;
 let settings = {
   settingsVersion,
   lastRowNum: 0,
-  presets: [],
+  businesses: [],
+  trips: [],
+  rate: null,
   maxMileage: 0
 }
 let submittingMileage = false;
@@ -39,6 +41,8 @@ let tokenClient;
 const tokenKey = 'daily-tracking-token';
 let accessToken = loadSavedToken();
 let signedOut = false;
+// The editor only opens on settings freshly loaded from this spreadsheet
+let loadedSheetId = null;
 
 // Older versions kept settings under a key that Goalie used too
 window.localStorage.removeItem('settings');
@@ -51,6 +55,10 @@ $id('date').valueAsDate = removeTime(new Date());
 setMessage('info', 'Loading Google sign-in...');
 $id('remove-button').onclick = handleRemoveClick;
 $id('remove-dialog').querySelector('form').onsubmit = handleRemoveChoice;
+$id('editor-add-business').onclick = () => addEditorBusiness('', true);
+$id('editor-add-trip').onclick = () => addEditorTrip(null, true);
+$id('editor-save').onclick = handleEditorSave;
+$id('editor-cancel').onclick = displaySettings;
 renderSheetControls();
 loadSheetsCached();
 
@@ -115,9 +123,15 @@ function handleSheetSelect(event) {
   const sheet = sheetList.recent.find(sheet => sheet.id === event.target.value);
   if (!sheet) return;
   rememberSheet(sheet.id, sheet.name);
-  form.style.display = 'none';
+  hideSheet();
   loadSheetsCached();
   if (accessToken) loadSheets();
+}
+
+// Hides the form and the editor while another spreadsheet loads
+function hideSheet() {
+  form.style.display = 'none';
+  $id('editor').style.display = 'none';
 }
 
 // Asks whether to just take the spreadsheet off the list, or trash it too
@@ -144,7 +158,7 @@ function removeCurrentSheet(doneMessage) {
   sheetList.current = sheetList.recent.length ? sheetList.recent[0].id : null;
   window.localStorage.setItem(sheetsKey, JSON.stringify(sheetList));
   renderSheetControls();
-  form.style.display = 'none';
+  hideSheet();
   loadSheetsCached();
   if (accessToken && currentSheetId()) {
     loadSheets(doneMessage);
@@ -184,6 +198,7 @@ function handleClientLoad() {
   $id('sheet-select').onchange = handleSheetSelect;
   $id('pick-button').onclick = handlePickClick;
   $id('create-button').onclick = handleCreateClick;
+  $id('edit-button').onclick = handleEditClick;
   updateSigninStatus(!!accessToken);
 }
 
@@ -288,7 +303,7 @@ function handlePicked(data) {
   if (data[google.picker.Response.ACTION] !== google.picker.Action.PICKED) return;
   const doc = data[google.picker.Response.DOCUMENTS][0];
   rememberSheet(doc[google.picker.Document.ID], doc[google.picker.Document.NAME]);
-  form.style.display = 'none';
+  hideSheet();
   loadSheetsCached();
   loadSheets();
 }
@@ -296,13 +311,18 @@ function handlePicked(data) {
 function handleCreateClick() {
   setMessage('info', 'Creating a new Miler Lite spreadsheet...');
   const body = {
-    properties: {title: 'Miler Lite mileage'},
+    properties: {title: `Miler Lite ${year}`},
     sheets: yearTabs().map(tab => ({properties: {title: tab.title}, data: [{rowData: tab.rows}]})),
   };
   sheetsFetch('', {method: 'POST', body: JSON.stringify(body)})
   .then(result => {
     rememberSheet(result.spreadsheetId, result.properties.title);
-    loadSheets();
+    return loadSheets();
+  }).then(loaded => {
+    // Start in the editor so the example businesses and trips get replaced
+    if (!loaded) return;
+    handleEditClick();
+    setMessage('success', 'Created! Set your rate and change the example businesses and saved trips to your own, then click Save.');
   }).catch(error => {
     console.error(error);
     setMessage('danger', 'Error: ' + error);
@@ -442,10 +462,11 @@ function loadSheetsCached() {
   }
 }
 
+// Resolves to true once the form is ready
 function loadSheets(doneMessage = 'Loaded!') {
   setMessage('info', 'Loading spreadsheet...');
 
-  getSpreadsheet(`'${settingsSheet}'!A1:J`)
+  return getSpreadsheet(`'${settingsSheet}'!A1:J`)
   .then(result => {
     // Keep the saved name up to date if the spreadsheet was renamed
     rememberSheet(currentSheetId(), result.properties.title);
@@ -453,13 +474,15 @@ function loadSheets(doneMessage = 'Loaded!') {
     const rowData = result.sheets[0].data[0].rowData || [];
     const data = rowData.map(row => (row.values || []).map(cell => cell.formattedValue));
     if (data.length === 0) {
-      setMessage('danger', 'No data found.');
-      return;
+      setMessage('danger', `The ${settingsSheet} tab is empty.`);
+      return false;
     }
 
     loadSettings(data);
+    loadedSheetId = currentSheetId();
 
     setMessage('success', doneMessage);
+    return true;
   }).catch(error => {
     console.error(error);
     if (String(error).includes('Unable to parse range')) {
@@ -487,46 +510,31 @@ function dontSubmit(event) {
 }
 
 function loadSettings(values) {
-  // business
-  settings.businessHtml = '';
-  for (let r = 2; r < values.length; r++) {
-    const business = (values[r][0] || '').trim();
-    if (business !== '') {
-      // add business
+  const rows = values.slice(2);
+  const cell = (row, column) => (row[column] || '').trim();
 
-      const index = r - 2;
-      settings.businessHtml += $id('template-business-choice').innerHTML
-        .replace(/\{\{INDEX\}\}/g, ''+index)
-        .replace(/\{\{VALUE\}\}/g, escapeHTML(business))
-        .replace(/\{\{LABEL\}\}/g, escapeHTML(business));
-    }
-  }
+  settings.businesses = rows.map(row => cell(row, 0)).filter(Boolean);
+  settings.businessHtml = settings.businesses.map((business, index) =>
+    $id('template-business-choice').innerHTML
+      .replace(/\{\{INDEX\}\}/g, ''+index)
+      .replace(/\{\{VALUE\}\}/g, escapeHTML(business))
+      .replace(/\{\{LABEL\}\}/g, escapeHTML(business))).join('');
 
-  // presets
-  settings.presets = [];
-  settings.presets.push({purpose: '', destination: '', mileage: 0});
-  settings.presetsHtml = $id('template-preset').innerHTML
-    .replace(/\{\{INDEX\}\}/g, 0)
-    .replace(/\{\{PURPOSE\}\}/g, 'Reset')
-    .replace(/\{\{BUTTON_CLASS\}\}/g, 'reset');
-  for (let r = 2; r < values.length; r++) {
-    const purpose = (values[r][2] || '').trim();
-    const destination = (values[r][3] || '').trim();
-    const mileage = parseInt((values[r][4] || '').trim(), 10) || 0;
-    if (purpose !== '' || destination !== '') {
-      // add preset button
+  settings.trips = rows
+    .map(row => ({purpose: cell(row, 2), destination: cell(row, 3), mileage: parseInt(cell(row, 4), 10) || 0}))
+    .filter(trip => trip.purpose || trip.destination);
+  // Button 0 is Reset, so the saved trips start at 1
+  const presetButton = (index, label, className) => $id('template-preset').innerHTML
+    .replace(/\{\{INDEX\}\}/g, ''+index)
+    .replace(/\{\{PURPOSE\}\}/g, escapeHTML(label))
+    .replace(/\{\{BUTTON_CLASS\}\}/g, className);
+  settings.presetsHtml = presetButton(0, 'Reset', 'reset') +
+    settings.trips.map((trip, index) => presetButton(index + 1, trip.purpose || trip.destination, '')).join('');
 
-      const index = r - 1;
-      settings.presets[index] = {purpose, destination, mileage};
-      settings.presetsHtml += $id('template-preset').innerHTML
-        .replace(/\{\{INDEX\}\}/g, ''+index)
-        .replace(/\{\{PURPOSE\}\}/g, escapeHTML(purpose))
-        .replace(/\{\{BUTTON_CLASS\}\}/g, '');
-    }
-  }
-
-  // values
   const valuesRow = values[2] || [];
+  // The rate may be formatted as money, like $0.70
+  const rate = parseFloat(String(valuesRow[6] || '').replace(/[^\d.]/g, ''));
+  settings.rate = isNaN(rate) ? null : rate;
   settings.maxMileage = parseInt(valuesRow[8], 10) || 0;
   settings.lastRowNum = parseInt(valuesRow[9], 10) || 4;
 
@@ -547,15 +555,183 @@ function displaySettings() {
   $id('end').value = settings.maxMileage || '';
   recalcMileage();
 
+  $id('editor').style.display = 'none';
   form.style.display = '';
 }
 
 function loadPreset(index) {
-  const {purpose, destination, mileage} = settings.presets[index];
+  const reset = {purpose: '', destination: '', mileage: 0};
+  const {purpose, destination, mileage} = index ? settings.trips[index - 1] : reset;
   $id('purpose').value = purpose;
   $id('destination').value = destination;
   $id('end').value = ((parseInt($id('start').value, 10) || 0) + mileage) || '';
   recalcMileage();
+}
+
+function handleEditClick() {
+  if (!loadedSheetId || loadedSheetId !== currentSheetId()) {
+    setMessage('warning', 'Wait for the spreadsheet to load, then click Edit.');
+    return;
+  }
+  $id('editor-title').value = currentSheetName();
+  $id('editor-rate').value = settings.rate === null ? '' : settings.rate;
+  $id('editor-businesses').innerHTML = '';
+  settings.businesses.forEach(business => addEditorBusiness(business, false));
+  $id('editor-trips').innerHTML = '';
+  settings.trips.forEach(trip => addEditorTrip(trip, false));
+  form.style.display = 'none';
+  $id('editor').style.display = '';
+  setMessage('info', 'Rename the spreadsheet, change the rate, or rename, drag to reorder, add or remove businesses and saved trips, then click Save.');
+}
+
+function addEditorItem(listId, templateId, focus) {
+  const item = document.createElement('div');
+  item.className = 'item';
+  item.innerHTML = $id(templateId).innerHTML;
+  item.querySelector('.e-remove').onclick = () => item.remove();
+  makeDraggable(item, item.querySelector('.drag-handle'));
+  $id(listId).appendChild(item);
+  if (focus) item.querySelector('input').focus();
+  return item;
+}
+
+function addEditorBusiness(name, focus) {
+  const item = addEditorItem('editor-businesses', 'template-editor-business', focus);
+  item.querySelector('.e-name').value = name;
+}
+
+function addEditorTrip(trip, focus) {
+  const item = addEditorItem('editor-trips', 'template-editor-trip', focus);
+  if (!trip) return;
+  item.querySelector('.e-purpose').value = trip.purpose;
+  item.querySelector('.e-destination').value = trip.destination;
+  item.querySelector('.e-miles').value = trip.mileage || '';
+}
+
+// Drag by the handle to reorder. Pointer events work for both mouse and touch,
+// where the browser's own drag and drop doesn't work on phones
+function makeDraggable(item, handle) {
+  handle.onpointerdown = event => {
+    event.preventDefault();
+    item.classList.add('dragging');
+    const move = event => {
+      moveItem(item, event.clientY);
+      // Scroll when dragging near the top or bottom of the screen
+      if (event.clientY < 60) window.scrollBy(0, -10);
+      if (event.clientY > window.innerHeight - 60) window.scrollBy(0, 10);
+    };
+    const stop = event => {
+      if (event.type === 'pointerup') moveItem(item, event.clientY);
+      item.classList.remove('dragging');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  };
+  // The browser's own drag would swallow the pointer moves
+  handle.ondragstart = event => event.preventDefault();
+  // The arrow keys move it too. Moving the neighbors keeps the handle focused
+  handle.onkeydown = event => {
+    const prev = item.previousElementSibling;
+    const next = item.nextElementSibling;
+    if (event.key === 'ArrowUp' && prev) item.after(prev);
+    else if (event.key === 'ArrowDown' && next) item.before(next);
+    else return;
+    event.preventDefault();
+  };
+}
+
+// Moves the neighbors around the dragged item rather than the item itself,
+// since moving it would cancel the drag on some phones
+function moveItem(item, y) {
+  const middle = other => other.getBoundingClientRect().top + other.offsetHeight / 2;
+  let prev = item.previousElementSibling;
+  while (prev && y < middle(prev)) {
+    item.after(prev);
+    prev = item.previousElementSibling;
+  }
+  let next = item.nextElementSibling;
+  while (next && y > middle(next)) {
+    item.before(next);
+    next = item.nextElementSibling;
+  }
+}
+
+async function handleEditorSave() {
+  const value = (item, className) => item.querySelector(className).value.trim();
+  const title = $id('editor-title').value.trim();
+  const rateText = $id('editor-rate').value.trim();
+  const rate = Number(rateText);
+  const businesses = [...$id('editor-businesses').children].map(item => value(item, '.e-name'));
+  const trips = [...$id('editor-trips').children].map(item => ({
+    purpose: value(item, '.e-purpose'),
+    destination: value(item, '.e-destination'),
+    miles: value(item, '.e-miles'),
+  }));
+
+  if (!title) return setMessage('warning', 'The spreadsheet needs a name.');
+  if (rateText === '' || !(rate >= 0)) return setMessage('warning', 'The rate per mile needs to be a number, like 0.70.');
+  if (!businesses.length) return setMessage('warning', 'Add at least one business.');
+  if (businesses.includes('')) return setMessage('warning', 'Every business needs a name.');
+  if (trips.some(trip => !trip.purpose)) return setMessage('warning', 'Every saved trip needs a purpose.');
+  if (trips.some(trip => !/^\d*$/.test(trip.miles))) return setMessage('warning', 'Miles need to be a whole number.');
+
+  // Each saved trip's amount is a formula that uses the rate, so a new rate
+  // changes the amounts of trips already saved this year too
+  if (rate !== settings.rate) {
+    try {
+      const range = encodeURIComponent(`'${mileageSheet}'!A${startingRow}:A`);
+      const saved = await sheetsFetch(`/${currentSheetId()}/values/${range}`);
+      const count = saved.values ? saved.values.length : 0;
+      if (count && !window.confirm(`Changing the rate also changes the amount of the ${count} trip${count === 1 ? '' : 's'} already saved in ${year}.\n\nSave anyway?`)) return;
+    } catch (error) {
+      console.error(error);
+      return setMessage('danger', 'Error: ' + error);
+    }
+  }
+
+  $id('editor-save').disabled = true;
+  setMessage('info', 'Saving...');
+  try {
+    const sheetIds = await sheetsFetch(`/${currentSheetId()}?fields=sheets.properties(sheetId,title)`);
+    const settingsId = sheetIds.sheets.find(sheet => sheet.properties.title === settingsSheet).properties.sheetId;
+    const requests = editorRequests(settingsId, businesses, trips, rate);
+    if (title !== currentSheetName()) {
+      requests.push({updateSpreadsheetProperties: {properties: {title}, fields: 'title'}});
+    }
+    await sheetsFetch(`/${currentSheetId()}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({requests}),
+    });
+    loadSheets('Saved!');
+  } catch (error) {
+    console.error(error);
+    setMessage('danger', 'Error: ' + error);
+  } finally {
+    $id('editor-save').disabled = false;
+  }
+}
+
+// Writes businesses to column A and saved trips to C to E from row 3 down,
+// and the rate to G3. The formulas in I3 and J3 stay as they are
+function editorRequests(sheetId, businesses, trips, rate) {
+  // Strings are written as text, so a name starting with = isn't a formula
+  const text = value => value ? {userEnteredValue: {stringValue: value}} : {};
+  const number = value => value === '' ? {} : {userEnteredValue: {numberValue: Number(value)}};
+  // With no end row, any old rows past the new list are cleared
+  const write = (startColumnIndex, endColumnIndex, rows, endRowIndex) => ({updateCells: {
+    range: {sheetId, startRowIndex: 2, endRowIndex, startColumnIndex, endColumnIndex},
+    rows: rows.map(values => ({values})),
+    fields: 'userEnteredValue',
+  }});
+  return [
+    write(0, 1, businesses.map(business => [text(business)])),
+    write(2, 5, trips.map(trip => [text(trip.purpose), text(trip.destination), number(trip.miles)])),
+    write(6, 7, [[number(rate)]], 3),
+  ];
 }
 
 function validate({date, business, purpose, destination, start, end}) {
