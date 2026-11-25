@@ -301,8 +301,11 @@ function yearTabs() {
     {title: settingsSheet, rows: [
       ['List businesses in column A and saved trips in columns C to E, from row 3 down. Set your rate per mile in G3.'],
       ['Business', null, 'Purpose', 'Destination', 'Miles', null, 'Rate per mile', null, 'Highest odometer', 'Next row'],
+      // Submit inserts rows at the top of the range, which would shift plain
+      // A4:A and F4:F references down and miss the first trip. INDIRECT stays put
       ['Work', null, 'Office', 'Main office', 10, null, 0.7, null,
-        `=MAX('${mileageSheet}'!F${startingRow}:F)`, `=COUNTA('${mileageSheet}'!A${startingRow}:A)+${startingRow}`],
+        `=MAX(INDIRECT("'${mileageSheet}'!F${startingRow}:F"))`,
+        `=COUNTA(INDIRECT("'${mileageSheet}'!A${startingRow}:A"))+${startingRow}`],
       ['Side business', null, 'Client visit', 'Client office', 25],
     ]},
   ];
