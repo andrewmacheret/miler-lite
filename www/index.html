@@ -1,164 +1,136 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light dark">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0b0d0c" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
     <title>Miler Lite</title>
     <script async src="https://andrewmacheret.com/analytics.js"></script>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name="description" content="Miler Lite logs business trips and their mileage to your own Google spreadsheet.">
     <link rel="canonical" href="https://andrewmacheret.com/projects/miler-lite/">
-    <link rel="stylesheet"
-      href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
-      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
-      crossorigin="anonymous">
+    <link rel="icon" href="beer.png">
+    <link rel="stylesheet" href="https://andrewmacheret.com/projects.css">
+    <link rel="stylesheet" href="index.css">
   </head>
   <body>
-    <div id="control" class="container mb-1">
-      <div class="row">
-        <div id="title" class="col">
-          <span style="line-height: 1.62; font-size: 1.5rem;">
-            <img src="beer.png" class="img-fluid" style="width: 1.62rem; height: 1.62rem; vertical-align: text-bottom;" alt="🍺">
-            Miler Lite
-          </span>
-        </div>
-        <div id="auth" class="col">
-          <span class="float-right">
-            <button id="authorize-button" type="button" class="btn btn-success" style="display: none;">Authorize</button>
-            <button id="signout-button" type="button" class="btn btn-outline-danger" style="display: none;">Sign Out</button>
-            <a id="spreadsheet-link" href="#" target="_blank" style="display: inline-block;">
-              <img src="sheets.png" class="img-fluid" style="width: 1.62rem; height: 1.62rem;" alt="📝">
+    <main class="app">
+      <header class="header">
+        <div>
+          <div class="title-row">
+            <a class="home" href="https://andrewmacheret.com/">
+              <img src="https://andrewmacheret.com/favicon.svg" alt="andrewmacheret.com" width="20" height="20">
             </a>
+            <span class="slash" aria-hidden="true">/</span>
+            <h1><img class="app-icon" src="beer.png" alt="">Miler Lite</h1>
+          </div>
+          <p>Log business trips and their mileage to your own Google spreadsheet.</p>
+        </div>
+        <div class="account">
+          <button id="authorize-button" type="button" class="control small primary" style="display: none;">Authorize</button>
+          <button id="signout-button" type="button" class="control small" style="display: none;">Sign Out</button>
+          <a id="spreadsheet-link" href="#" target="_blank" class="control round" style="display: none;" title="Open the spreadsheet in Google Sheets">
+            <img src="sheets.png" alt="Open the spreadsheet in Google Sheets">
+          </a>
+        </div>
+      </header>
+
+      <div id="sheet-controls" class="toolbar">
+        <select id="sheet-select" class="select" style="display: none;" aria-label="Spreadsheet"></select>
+        <div class="toolbar-buttons">
+          <button id="remove-button" type="button" class="control small danger" style="display: none;" title="Remove this spreadsheet from the list">Remove</button>
+          <span id="sheet-buttons" style="display: none;">
+            <button id="pick-button" type="button" class="control small" title="Choose a spreadsheet from Google Drive">Open</button>
+            <button id="create-button" type="button" class="control small" title="Create a new Miler Lite spreadsheet">New</button>
           </span>
         </div>
       </div>
-    </div>
 
-    <div id="sheet-controls" class="container mb-2">
-      <div class="d-flex">
-        <select id="sheet-select" class="custom-select mr-2" style="display: none;" aria-label="Spreadsheet"></select>
-        <button id="remove-button" type="button" class="btn btn-outline-danger mr-2 flex-shrink-0" style="display: none;" title="Remove this spreadsheet from the list. It stays in your Google Drive">Remove</button>
-        <div id="sheet-buttons" class="btn-group flex-shrink-0" style="display: none;">
-          <button id="pick-button" type="button" class="btn btn-outline-secondary" title="Choose a spreadsheet from Google Drive">Open</button>
-          <button id="create-button" type="button" class="btn btn-outline-secondary" title="Create a new Miler Lite spreadsheet">New</button>
+      <div id="message" class="message" role="status"></div>
+
+      <form id="mileage-form" name="mileage-form" class="stage" action="#" onsubmit="submitMileage(); return false;" style="display: none;">
+        <fieldset class="field">
+          <legend>Presets</legend>
+          <template id="template-preset">
+            <button id="preset-{{INDEX}}" type="button" class="control small preset {{BUTTON_CLASS}}" onclick="loadPreset({{INDEX}});">{{PURPOSE}}</button>
+          </template>
+          <div id="presets" class="choices"></div>
+        </fieldset>
+
+        <div class="field">
+          <label class="field-label" for="date">Date</label>
+          <input type="date" id="date" name="date" value="" onkeypress="return dontSubmit(event)">
         </div>
-      </div>
-    </div>
 
-    <div id="message-wrapper" class="container">
-      <div id="message" class="alert alert-success" role="alert"></div>
-    </div>
+        <fieldset class="field">
+          <legend>Business</legend>
+          <template id="template-business-choice">
+            <label class="control choice">
+              <input type="radio" id="business-{{INDEX}}" name="business" value="{{VALUE}}">
+              {{LABEL}}
+            </label>
+          </template>
+          <div id="business-choices" class="choices"></div>
+        </fieldset>
 
-    <div id="form-wrapper" class="container">
-      <form id="mileage-form" name="mileage-form" action="#" onsubmit="submitMileage(); return false;" style="display: none;">
-        <div class="form-group">
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Presets</label>
-            </div>
-
-            <template id="template-preset" style="display: none;">
-              <button id="preset-{{INDEX}}" type="button" class="btn btn-block {{BUTTON_CLASS}}" onclick="loadPreset({{INDEX}});">{{PURPOSE}}</button>
-            </template>
-
-            <div id="presets">
-            </div>
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Date</label>
-            </div>
-            <input type="date" class="form-control form-control-lg" id="date" name="date" value="" placeholder="mm/dd/yyyy" onkeypress="return dontSubmit(event)" />
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Business</label>
-            </div>
-
-            <template id="template-business-choice" style="display: none;">
-              <label class="btn btn-outline-secondary btn-lg {{BUTTON_ACTIVE}}">
-                <input type="radio" id="business-{{INDEX}}" name="business" value="{{VALUE}}" />
-                {{LABEL}}
-              </label>
-            </template>
-
-            <div id="business-choices" class="btn-group btn-group-toggle" data-toggle="buttons">
-            </div>
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Purpose</label>
-            </div>
-            <input type="text" class="form-control form-control-lg" id="purpose" name="purpose" value="" placeholder="..." onkeypress="return dontSubmit(event)" />
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Destination</label>
-            </div>
-            <input type="text" class="form-control form-control-lg" id="destination" name="destination" value="" placeholder="..." onkeypress="return dontSubmit(event)" />
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Start</label>
-            </div>
-            <input type="number" class="form-control form-control-lg" id="start" name="start" value="" placeholder="0" onkeyup="startChanged()" onclick="startChanged()" onchange="startChanged()" onkeypress="return dontSubmit(event)" />
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">End</label>
-            </div>
-            <input type="number" class="form-control form-control-lg" id="end" name="end" value="" placeholder="0" onkeyup="endChanged()" onclick="endChanged()" onchange="endChanged()" onkeypress="return dontSubmit(event)" />
-          </fieldset>
-
-          <fieldset class="form-group">
-            <div>
-              <label class="font-weight-bold">Mileage</label>
-            </div>
-            <input type="number" class="form-control form-control-lg" id="mileage" name="mileage" value="" placeholder="0" onkeypress="return dontSubmit(event)" readonly />
-          </fieldset>
-
-          <div id="message-below" class="alert alert-success" role="alert"></div>
-
-          <fieldset class="form-group">
-            <button id="submit" class="btn btn-block btn-lg btn-primary" type="submit">Submit</button>
-          </fieldset>
+        <div class="field">
+          <label class="field-label" for="purpose">Purpose</label>
+          <input type="text" id="purpose" name="purpose" value="" placeholder="..." onkeypress="return dontSubmit(event)">
         </div>
+
+        <div class="field">
+          <label class="field-label" for="destination">Destination</label>
+          <input type="text" id="destination" name="destination" value="" placeholder="..." onkeypress="return dontSubmit(event)">
+        </div>
+
+        <div class="odometer">
+          <div class="field">
+            <label class="field-label" for="start">Start</label>
+            <input type="number" inputmode="numeric" id="start" name="start" value="" placeholder="0" onkeyup="startChanged()" onclick="startChanged()" onchange="startChanged()" onkeypress="return dontSubmit(event)">
+          </div>
+          <div class="field">
+            <label class="field-label" for="end">End</label>
+            <input type="number" inputmode="numeric" id="end" name="end" value="" placeholder="0" onkeyup="endChanged()" onclick="endChanged()" onchange="endChanged()" onkeypress="return dontSubmit(event)">
+          </div>
+          <div class="field">
+            <label class="field-label" for="mileage">Mileage</label>
+            <input type="number" id="mileage" name="mileage" value="" placeholder="0" onkeypress="return dontSubmit(event)" readonly>
+          </div>
+        </div>
+
+        <button id="submit" class="control primary submit" type="submit">Submit</button>
+        <div id="message-below" class="message" role="status"></div>
       </form>
-    </div>
 
-    <footer class="container mb-3 text-center small">
-      <a href="https://andrewmacheret.com/projects/goalie/about.html" class="text-muted">About</a> · <a href="https://andrewmacheret.com/projects/goalie/privacy.html" class="text-muted">Privacy</a> · <a href="https://andrewmacheret.com/projects/goalie/terms.html" class="text-muted">Terms</a>
-    </footer>
+      <dialog id="remove-dialog">
+        <form method="dialog">
+          <h2>Remove "<span id="remove-name"></span>"?</h2>
+          <p>Take it off this list, or also move it to your Google Drive trash. Google keeps trashed files for 30 days, so you can still restore it.</p>
+          <p id="remove-signin-note">Sign in first to move it to the trash.</p>
+          <div class="dialog-actions">
+            <button value="cancel" class="control small">Cancel</button>
+            <button value="list" class="control small">Remove from list</button>
+            <button value="trash" id="remove-trash" class="control small danger">Move to trash</button>
+          </div>
+        </form>
+      </dialog>
 
-    <script
-      src="index.js"></script>
+      <footer class="footer">
+        <a href="https://andrewmacheret.com/projects/goalie/about.html">About</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="https://andrewmacheret.com/projects/goalie/privacy.html">Privacy</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="https://andrewmacheret.com/projects/goalie/terms.html">Terms</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="https://andrewmacheret.com/">More projects</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="https://github.com/andrewmacheret/miler-lite">Source</a>
+      </footer>
+    </main>
 
-    <script
-      async defer
-      src="https://accounts.google.com/gsi/client"
-      onload="handleClientLoad()"
-      onerror="handleClientLoadError()">
-    </script>
-
+    <script src="index.js"></script>
+    <script async defer src="https://accounts.google.com/gsi/client" onload="handleClientLoad()" onerror="handleClientLoadError()"></script>
     <script async defer src="https://apis.google.com/js/api.js"></script>
-
-    <script
-      src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
-      integrity="sha256-3edrmyuQ0w65f8gfBsqowzjJe2iM6n0nKciPUp8y+7E="
-      crossorigin="anonymous"></script>
-    <script
-      src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"
-      integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
-      crossorigin="anonymous"></script>
-    <script
-      src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"
-      integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
-      crossorigin="anonymous"></script>
-
   </body>
 </html>

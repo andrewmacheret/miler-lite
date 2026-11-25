@@ -8,6 +8,7 @@ const PICKER_API_KEY = 'AIzaSyAxkzeJQJKcw5kZ_P-NXqG15scFqMIrf3A';
 // drive.file only reaches spreadsheets the user picks or Miler Lite creates
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
+const DRIVE_API = 'https://www.googleapis.com/drive/v3/files';
 
 const formName = 'mileage-form';
 const form = document.forms[formName];
@@ -24,7 +25,10 @@ const sheetsKey = 'miler-lite-sheets';
 const maxRecentSheets = 10;
 let sheetList = loadSheetList();
 
+// Saved settings hold the form's HTML, so bump this when the templates change
+const settingsVersion = 2;
 let settings = {
+  settingsVersion,
   lastRowNum: 0,
   presets: [],
   maxMileage: 0
@@ -46,6 +50,7 @@ $id('date').valueAsDate = removeTime(new Date());
 
 setMessage('info', 'Loading Google sign-in...');
 $id('remove-button').onclick = handleRemoveClick;
+$id('remove-dialog').querySelector('form').onsubmit = handleRemoveChoice;
 renderSheetControls();
 loadSheetsCached();
 
@@ -77,6 +82,11 @@ function currentSheetId() {
   return sheetList.current;
 }
 
+function currentSheetName() {
+  const sheet = sheetList.recent.find(sheet => sheet.id === currentSheetId());
+  return sheet ? sheet.name : '';
+}
+
 function spreadsheetLink() {
   return `https://docs.google.com/spreadsheets/d/${currentSheetId()}/edit`;
 }
@@ -97,7 +107,7 @@ function renderSheetControls() {
   $id('remove-button').style.display = currentSheetId() ? '' : 'none';
 
   const link = $id('spreadsheet-link');
-  link.style.display = currentSheetId() ? 'inline-block' : 'none';
+  link.style.display = currentSheetId() ? '' : 'none';
   link.href = spreadsheetLink();
 }
 
@@ -110,18 +120,51 @@ function handleSheetSelect(event) {
   if (accessToken) loadSheets();
 }
 
-// Takes the spreadsheet off this browser's list. It stays in Google Drive
+// Asks whether to just take the spreadsheet off the list, or trash it too
 function handleRemoveClick() {
-  const id = currentSheetId();
-  if (!id) return;
+  if (!currentSheetId()) return;
+  const dialog = $id('remove-dialog');
+  $id('remove-name').textContent = currentSheetName();
+  $id('remove-trash').hidden = !accessToken;
+  $id('remove-signin-note').hidden = !!accessToken;
+  dialog.showModal();
+}
+
+// Each dialog button closes it. Escape closes it without a submit
+function handleRemoveChoice(event) {
+  const choice = event.submitter && event.submitter.value;
+  if (choice === 'list') removeCurrentSheet();
+  if (choice === 'trash') trashCurrentSheet();
+}
+
+// Takes the spreadsheet off this browser's list and loads the next one
+function removeCurrentSheet(doneMessage) {
   window.localStorage.removeItem(settingsKey());
-  sheetList.recent = sheetList.recent.filter(sheet => sheet.id !== id);
+  sheetList.recent = sheetList.recent.filter(sheet => sheet.id !== currentSheetId());
   sheetList.current = sheetList.recent.length ? sheetList.recent[0].id : null;
   window.localStorage.setItem(sheetsKey, JSON.stringify(sheetList));
   renderSheetControls();
   form.style.display = 'none';
   loadSheetsCached();
-  updateSigninStatus(!!accessToken);
+  if (accessToken && currentSheetId()) {
+    loadSheets(doneMessage);
+  } else {
+    updateSigninStatus(!!accessToken);
+    if (doneMessage) setMessage('success', doneMessage);
+  }
+}
+
+// Trashed files stay in Google Drive's trash for 30 days
+async function trashCurrentSheet() {
+  const name = currentSheetName();
+  setMessage('info', 'Moving the spreadsheet to the trash...');
+  try {
+    await googleFetch(`${DRIVE_API}/${currentSheetId()}`, {method: 'PATCH', body: JSON.stringify({trashed: true})});
+  } catch (error) {
+    console.error(error);
+    return setMessage('danger', 'Could not move it to the trash: ' + error);
+  }
+  removeCurrentSheet(`Moved "${escapeHTML(name)}" to your Google Drive trash.`);
 }
 
 
@@ -319,13 +362,10 @@ function yearTabs() {
  * @param {string} message Text to be placed in pre element.
  */
 function setMessage(level, message) {
-  const messageElement = $id('message');
-  messageElement.innerHTML = message;
-  messageElement.className = 'alert alert-' + level;
-
-  const messageElement2 = $id('message-below');
-  messageElement2.innerHTML = message;
-  messageElement2.className = 'alert alert-' + level;
+  for (const id of ['message', 'message-below']) {
+    $id(id).innerHTML = message;
+    $id(id).className = 'message ' + level;
+  }
 
   console.log(level, message);
 }
@@ -344,11 +384,15 @@ function endChanged() {
   recalcMileage();
 }
 
-// Calls the Sheets API and rejects with the error message
-async function sheetsFetch(path, options = {}) {
+function sheetsFetch(path, options) {
+  return googleFetch(`${SHEETS_API}${path}`, options);
+}
+
+// Calls a Google API and rejects with the error message
+async function googleFetch(url, options = {}) {
   const headers = {...options.headers, Authorization: `Bearer ${accessToken}`};
   if (options.body) headers['Content-Type'] = 'application/json';
-  const response = await fetch(`${SHEETS_API}${path}`, {...options, headers});
+  const response = await fetch(url, {...options, headers});
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     // Access tokens expire after an hour, so ask to sign in again
@@ -389,7 +433,7 @@ function loadSheetsCached() {
   if (!currentSheetId()) return;
   try {
     const cached = JSON.parse(window.localStorage.getItem(settingsKey()));
-    if (cached) {
+    if (cached && cached.settingsVersion === settingsVersion) {
       settings = cached;
       displaySettings();
     }
@@ -398,7 +442,7 @@ function loadSheetsCached() {
   }
 }
 
-function loadSheets() {
+function loadSheets(doneMessage = 'Loaded!') {
   setMessage('info', 'Loading spreadsheet...');
 
   getSpreadsheet(`'${settingsSheet}'!A1:J`)
@@ -415,12 +459,12 @@ function loadSheets() {
 
     loadSettings(data);
 
-    setMessage('success', 'Loaded!');
+    setMessage('success', doneMessage);
   }).catch(error => {
     console.error(error);
     if (String(error).includes('Unable to parse range')) {
       setMessage('warning', `This spreadsheet has no ${year} tabs yet. ` +
-        `<button type="button" class="btn btn-sm btn-primary ml-2" onclick="addYearTabs()">Add ${year} tabs</button>`);
+        `<button type="button" class="control small primary" onclick="addYearTabs()">Add ${year} tabs</button>`);
     } else if (/permission|not found/i.test(error)) {
       // drive.file only reaches spreadsheets this Google account picked in Miler Lite
       setMessage('danger', 'Miler Lite can\'t open this spreadsheet with this Google account. Click <b>Open</b> to choose it again.');
@@ -454,8 +498,7 @@ function loadSettings(values) {
       settings.businessHtml += $id('template-business-choice').innerHTML
         .replace(/\{\{INDEX\}\}/g, ''+index)
         .replace(/\{\{VALUE\}\}/g, escapeHTML(business))
-        .replace(/\{\{LABEL\}\}/g, escapeHTML(business))
-        .replace(/\{\{BUTTON_ACTIVE\}\}/g, index === 0 ? 'active' : '');
+        .replace(/\{\{LABEL\}\}/g, escapeHTML(business));
     }
   }
 
@@ -465,7 +508,7 @@ function loadSettings(values) {
   settings.presetsHtml = $id('template-preset').innerHTML
     .replace(/\{\{INDEX\}\}/g, 0)
     .replace(/\{\{PURPOSE\}\}/g, 'Reset')
-    .replace(/\{\{BUTTON_CLASS\}\}/g, 'btn-outline-secondary');
+    .replace(/\{\{BUTTON_CLASS\}\}/g, 'reset');
   for (let r = 2; r < values.length; r++) {
     const purpose = (values[r][2] || '').trim();
     const destination = (values[r][3] || '').trim();
@@ -478,7 +521,7 @@ function loadSettings(values) {
       settings.presetsHtml += $id('template-preset').innerHTML
         .replace(/\{\{INDEX\}\}/g, ''+index)
         .replace(/\{\{PURPOSE\}\}/g, escapeHTML(purpose))
-        .replace(/\{\{BUTTON_CLASS\}\}/g, 'btn-outline-primary');
+        .replace(/\{\{BUTTON_CLASS\}\}/g, '');
     }
   }
 
@@ -494,8 +537,9 @@ function loadSettings(values) {
 
 function displaySettings() {
   $id('business-choices').innerHTML = settings.businessHtml;
-  // make sure at least one is checked
-  form.business[0].checked = true;
+  // make sure at least one is checked. form.business isn't a list when there's only one
+  const firstBusiness = form.querySelector('input[name="business"]');
+  if (firstBusiness) firstBusiness.checked = true;
 
   $id('presets').innerHTML = settings.presetsHtml;
 
@@ -612,7 +656,7 @@ function submitMileage() {
     .then(updates => {
       console.log(updates);
       setSubmitEnabled(true);
-      setMessage('success', `Saved <a href="${spreadsheetLink()}" target="_blank" class="alert-link">${updates.updatedRange}</a>`);
+      setMessage('success', `Saved <a href="${spreadsheetLink()}" target="_blank">${updates.updatedRange}</a>`);
 
       settings.lastRowNum += 1;
       if (settings.maxMileage < end) settings.maxMileage = end

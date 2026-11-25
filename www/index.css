@@ -1,0 +1,285 @@
+/* Colors, cards, buttons and the footer come from https://andrewmacheret.com/projects.css */
+
+[hidden] {
+  display: none !important;
+}
+
+.app-icon {
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 0.3rem;
+  vertical-align: -0.15em;
+}
+
+/* the icons are black, so flip them to white on the dark background */
+@media (prefers-color-scheme: dark) {
+  .app-icon {
+    filter: invert(1);
+  }
+}
+
+/* sign in, sign out and the link to the spreadsheet */
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.control.round {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.control.round img {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.control.danger,
+.control.danger:hover:not(:disabled) {
+  border-color: var(--bad-border);
+  color: var(--bad);
+}
+
+/* the spreadsheet menu and its buttons */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.toolbar .select {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.toolbar-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* the buttons that need sign-in. The script hides them as a group */
+#sheet-buttons {
+  display: contents;
+}
+
+.header {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+/* status messages */
+
+.message {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  background: var(--control);
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.message:empty {
+  display: none;
+}
+
+.message.success {
+  border-color: var(--good-border);
+  background: var(--good-bg);
+  color: var(--good);
+}
+
+.message.warning {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.message.danger {
+  border-color: var(--bad-border);
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+
+.message a:link,
+.message a:visited {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.message .control {
+  margin-left: 0.5rem;
+}
+
+/* the form and the editor */
+
+.stage {
+  padding: 1.25rem;
+}
+
+.field {
+  min-width: 0;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 0;
+}
+
+.field legend,
+.field-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  padding: 0;
+  color: var(--bright);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+input[type='text'],
+input[type='number'],
+input[type='date'],
+textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  background: var(--control);
+  color: var(--bright);
+  font: inherit;
+  /* 16px or more so phones don't zoom in on focus */
+  font-size: 1.05rem;
+}
+
+input[readonly] {
+  color: var(--muted);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+.is-invalid {
+  border-color: var(--bad) !important;
+  border-radius: 14px;
+  box-shadow: 0 0 0 3px var(--bad-bg);
+}
+
+/* pick-one and pick-any buttons. The input is hidden and the pill shows its state */
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.choice {
+  position: relative;
+}
+
+.choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice:has(input:checked),
+.choice:has(input:checked):hover {
+  border-color: transparent;
+  background: var(--gradient);
+  box-shadow: var(--gradient-shadow);
+  color: var(--on-gradient);
+}
+
+.choice:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* saved trips. Reset is dimmer since it only clears the boxes */
+.preset.reset {
+  color: var(--muted);
+}
+
+/* start, end and miles side by side */
+.odometer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.submit {
+  width: 100%;
+  font-size: 1.1rem;
+}
+
+/* the Remove question */
+
+dialog {
+  box-sizing: border-box;
+  width: min(28rem, calc(100% - 2rem));
+  padding: 1.25rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+dialog::backdrop {
+  background: rgb(11 13 12 / 0.45);
+}
+
+dialog h2 {
+  color: var(--bright);
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+
+dialog p {
+  margin-top: 0.6rem;
+  line-height: 1.5;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .stage {
+    padding: 1rem;
+  }
+
+  .toolbar .select {
+    flex-basis: 100%;
+  }
+
+  .toolbar-buttons {
+    flex: 1 1 100%;
+  }
+
+  .toolbar-buttons .control {
+    flex: 1;
+    padding-inline: 0.5rem;
+  }
+
+  .odometer {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
