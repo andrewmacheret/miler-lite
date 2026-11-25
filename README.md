@@ -1,6 +1,6 @@
 # miler-lite
 
-[![Deploy to S3](https://github.com/andrewmacheret/miler-lite/actions/workflows/deploy.yml/badge.svg)](https://github.com/andrewmacheret/miler-lite/actions/workflows/deploy.yml) [![License](https://img.shields.io/badge/license-MIT-lightgray.svg)](https://github.com/andrewmacheret/miler-lite/blob/master/LICENSE.md)
+[![Deploy to S3](https://github.com/andrewmacheret/miler-lite/actions/workflows/deploy.yml/badge.svg)](https://github.com/andrewmacheret/miler-lite/actions/workflows/deploy.yml) [![Canary](https://github.com/andrewmacheret/miler-lite/actions/workflows/canary.yml/badge.svg)](https://github.com/andrewmacheret/miler-lite/actions/workflows/canary.yml) [![License](https://img.shields.io/badge/license-MIT-lightgray.svg)](https://github.com/andrewmacheret/miler-lite/blob/master/LICENSE.md)
 
 A daily mileage tracker that reads and writes a Google Sheet with the Sheets API.
 
